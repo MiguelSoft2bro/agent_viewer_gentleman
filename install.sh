@@ -4,8 +4,11 @@
 #
 # What it does:
 #   1. Creates ~/.local/bin/viewer  (global launcher, points to this repo)
-#   2. Patches ~/.config/opencode/opencode.json with the auto-launch rule
-#      so the SDD orchestrator can say "arranca el viewer" and it just works.
+#   2. Patches ~/.config/opencode/opencode.json with:
+#      a) Auto-launch rule (say "arranca el viewer" in opencode)
+#      b) VIEWER INTEGRATION block in sdd-orchestrator agent prompt
+#         so every SDD phase notifies the viewer in real time.
+#         Works whether or not you have Gentleman Skills installed.
 #
 # Requirements:
 #   - Python 3.10+
@@ -70,50 +73,111 @@ if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
 fi
 
 # ── 5. Patch opencode.json ────────────────────────────────────
-OPENCODE_DIR="$HOME/.config/opencode"
-
 if [ ! -f "$OPENCODE_JSON" ]; then
     echo -e "${YELLOW}⚠ opencode.json not found at $OPENCODE_JSON${NC}"
     echo -e "  Skipping opencode integration patch."
     echo -e "  Run opencode once to generate the config, then re-run install.sh."
     echo ""
 else
-    VIEWER_INSTRUCTION='VIEWER AUTO-LAUNCH RULE:\nIf the user says anything like "abre el viewer", "abrir viewer", "open viewer", "lanza el viewer", "arranca el viewer", "start viewer", "inicia el viewer", or any similar variation requesting to open/launch the visual dashboard — immediately run Bash: `_OWNER=$(ps -o ppid= -p $PPID | tr -d '"'"' '"'"'); viewer --owner-pid $_OWNER > /tmp/viewer.log 2>&1 &` then confirm with one line: "✅ Viewer lanzado — http://localhost:<port>" (read port from /tmp/sdd_viewer.port if available, otherwise just say "abriendo en background"). Do NOT ask for confirmation before launching. Do NOT open a new terminal. Just run it.'
-
-    python3 - "$OPENCODE_JSON" "$VIEWER_INSTRUCTION" << 'PYEOF'
+    python3 - "$OPENCODE_JSON" << 'PYEOF'
 import sys, json, os
 
 config_path = sys.argv[1]
-new_instruction = sys.argv[2]
 
 with open(config_path, "r") as f:
     config = json.load(f)
+
+changed = False
+
+# ── 5a. Auto-launch rule in top-level instructions ────────────
+AUTO_LAUNCH = (
+    'VIEWER AUTO-LAUNCH RULE:\n'
+    'If the user says anything like "abre el viewer", "abrir viewer", "open viewer", '
+    '"lanza el viewer", "arranca el viewer", "start viewer", "inicia el viewer", '
+    'or any similar variation requesting to open/launch the visual dashboard — '
+    'immediately run Bash: '
+    '`_OWNER=$(ps -o ppid= -p $PPID | tr -d \' \'); viewer --owner-pid $_OWNER > /tmp/viewer.log 2>&1 &` '
+    'then confirm with one line: "✅ Viewer lanzado — http://localhost:<port>" '
+    '(read port from /tmp/sdd_viewer.port if available, otherwise just say "abriendo en background"). '
+    'Do NOT ask for confirmation before launching. Do NOT open a new terminal. Just run it.'
+)
 
 instructions = config.get("instructions", [])
 if isinstance(instructions, str):
     instructions = [instructions]
 
-# Check if viewer rule already exists
-already_present = any(
-    "VIEWER AUTO-LAUNCH RULE" in str(item)
-    for item in instructions
+if not any("VIEWER AUTO-LAUNCH RULE" in str(i) for i in instructions):
+    instructions.insert(0, AUTO_LAUNCH)
+    config["instructions"] = instructions
+    changed = True
+    print("  → Auto-launch rule added to instructions.")
+else:
+    print("  → Auto-launch rule already present, skipping.")
+
+# ── 5b. VIEWER INTEGRATION block in sdd-orchestrator prompt ──
+VIEWER_INTEGRATION = (
+    "\nVIEWER INTEGRATION (optional, silent-fail):\n"
+    "If /tmp/sdd_viewer.port exists, a visual dashboard may be running.\n"
+    "Before delegating each phase via Task, notify the viewer by running Bash:\n"
+    "  _VPORT=$(cat /tmp/sdd_viewer.port 2>/dev/null || echo \"\"); "
+    "if [ -n \"$_VPORT\" ]; then curl -sf -X POST \"http://localhost:$_VPORT/state\" "
+    "-H \"Content-Type: application/json\" "
+    "-d '{\"orchestrator\":\"delegating\",\"current_agent\":\"AGENT\","
+    "\"agent_state\":\"working\",\"current_task\":\"TASK\"}' || true; fi\n\n"
+    "After each Task returns, notify done:\n"
+    "  _VPORT=$(cat /tmp/sdd_viewer.port 2>/dev/null || echo \"\"); "
+    "if [ -n \"$_VPORT\" ]; then curl -sf -X POST \"http://localhost:$_VPORT/state\" "
+    "-H \"Content-Type: application/json\" "
+    "-d '{\"orchestrator\":\"reviewing\",\"current_agent\":\"AGENT\","
+    "\"agent_state\":\"done\",\"current_task\":\"\"}' || true; fi\n\n"
+    "When all phases are complete, set idle:\n"
+    "  _VPORT=$(cat /tmp/sdd_viewer.port 2>/dev/null || echo \"\"); "
+    "if [ -n \"$_VPORT\" ]; then curl -sf -X POST \"http://localhost:$_VPORT/state\" "
+    "-H \"Content-Type: application/json\" "
+    "-d '{\"orchestrator\":\"idle\",\"current_agent\":null,"
+    "\"agent_state\":\"idle\",\"current_task\":\"\"}' || true; fi\n\n"
+    "Replace AGENT with the skill name (explore/propose/spec/design/tasks/apply/verify/archive) "
+    "and TASK with a short description.\n"
+    "All curl calls are fire-and-forget (|| true). Never block on viewer availability."
 )
 
-if already_present:
-    print("  → Viewer rule already present in opencode.json, skipping.")
-else:
-    instructions.insert(0, new_instruction)
-    config["instructions"] = instructions
+agents = config.get("agent", {})
+orch = agents.get("sdd-orchestrator", {})
+prompt = orch.get("prompt", "")
 
-    # Write back with a backup
+if "VIEWER INTEGRATION" not in prompt:
+    if prompt:
+        # Append to existing orchestrator prompt
+        orch["prompt"] = prompt.rstrip() + "\n" + VIEWER_INTEGRATION
+        agents["sdd-orchestrator"] = orch
+        config["agent"] = agents
+        changed = True
+        print("  → VIEWER INTEGRATION block added to sdd-orchestrator prompt.")
+    else:
+        # No sdd-orchestrator yet — create a minimal one
+        agents["sdd-orchestrator"] = {
+            "mode": "all",
+            "description": "SDD Orchestrator",
+            "prompt": VIEWER_INTEGRATION.strip()
+        }
+        config["agent"] = agents
+        changed = True
+        print("  → sdd-orchestrator agent created with VIEWER INTEGRATION block.")
+else:
+    print("  → VIEWER INTEGRATION already present in sdd-orchestrator, skipping.")
+
+# ── Write back ────────────────────────────────────────────────
+if changed:
     backup_path = config_path + ".bak"
     os.rename(config_path, backup_path)
     with open(config_path, "w") as f:
         json.dump(config, f, indent=2, ensure_ascii=False)
-    print(f"  → opencode.json patched. Backup at {backup_path}")
+    print(f"  → opencode.json saved. Backup at {backup_path}")
+else:
+    print("  → No changes needed.")
 PYEOF
 
-    echo -e "${GREEN}✓ opencode.json patched with viewer auto-launch rule${NC}"
+    echo -e "${GREEN}✓ opencode.json patched${NC}"
 fi
 
 # ── 6. Done ──────────────────────────────────────────────────
@@ -122,8 +186,9 @@ echo -e "${GREEN}╔════════════════════
 echo -e "${GREEN}║         Installation complete!       ║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════╝${NC}"
 echo ""
-echo -e "  ${CYAN}viewer${NC}           → start the dashboard"
-echo -e "  ${CYAN}viewer --help${NC}    → show options"
+echo -e "  ${CYAN}viewer${NC}               → start the dashboard"
+echo -e "  ${CYAN}viewer --help${NC}        → show options"
+echo -e "  ${CYAN}python3 viewer_client.py test${NC}  → run full demo"
 echo ""
 echo -e "  In opencode, just say: ${CYAN}\"arranca el viewer\"${NC}"
 echo ""
