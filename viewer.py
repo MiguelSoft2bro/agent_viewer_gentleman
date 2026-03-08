@@ -5,8 +5,10 @@ Demo mode: open http://localhost:PORT?demo=1
 Run:  python3 viewer.py
 """
 
+import argparse
 import json
 import os
+import signal
 import socket
 import threading
 import time
@@ -18,8 +20,10 @@ PORTS     = [8765, 8766, 8767, 8768, 8769]
 PORT_FILE = "/tmp/sdd_viewer.port"
 
 # ── Shared state ─────────────────────────────
-_lock        = threading.Lock()
-_state       = {
+_lock          = threading.Lock()
+_last_activity = time.time()   # updated on every POST /state
+_owner_pid     = None          # PID of the opencode process that launched us
+_state         = {
     "orchestrator":  "idle",   # idle | thinking | reviewing | delegating
     "current_agent": None,     # None | explore | propose | spec | design | tasks | apply | verify | archive
     "agent_state":   "idle",   # idle | working | done | error
@@ -128,7 +132,9 @@ class ViewerHandler(BaseHTTPRequestHandler):
 
             allowed = {"orchestrator", "current_agent", "agent_state",
                        "current_task", "history", "tasks"}
+            global _last_activity
             with _lock:
+                _last_activity = time.time()
                 for k, v in incoming.items():
                     if k not in allowed:
                         continue
@@ -175,6 +181,14 @@ def find_free_port(candidates):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="SDD Agent Viewer")
+    parser.add_argument("--owner-pid", type=int, default=None,
+                        help="PID of the opencode process that launched this viewer")
+    args = parser.parse_args()
+
+    global _owner_pid
+    _owner_pid = args.owner_pid
+
     port = find_free_port(PORTS)
     if port is None:
         print("ERROR: No free port found in range", PORTS)
@@ -184,6 +198,8 @@ def main():
     server = ThreadedHTTPServer(("", port), ViewerHandler)
     url = f"http://localhost:{port}"
     print(f"SDD Viewer running at {url}", flush=True)
+    if _owner_pid:
+        print(f"Watching opencode PID {_owner_pid} — will shut down when it exits.", flush=True)
     print("Press Ctrl+C to stop.", flush=True)
 
     try:
@@ -193,6 +209,22 @@ def main():
         pass
 
     threading.Timer(0.5, lambda: webbrowser.open_new_tab(url)).start()
+
+    # ── Owner watchdog — shuts down when the opencode process that launched us exits ──
+    def _owner_watchdog():
+        if not _owner_pid:
+            return
+        while True:
+            time.sleep(5)
+            try:
+                os.kill(_owner_pid, 0)   # signal 0 = just check existence
+            except (ProcessLookupError, PermissionError):
+                print(f"\nopencode (PID {_owner_pid}) exited — shutting down viewer.", flush=True)
+                server.shutdown()
+                return
+
+    t = threading.Thread(target=_owner_watchdog, daemon=True)
+    t.start()
 
     try:
         server.serve_forever()
@@ -285,6 +317,31 @@ HTML_PAGE = r"""<!DOCTYPE html>
       font-size:10px; padding:2px 6px; border-radius:3px;
       background:#1a2a1a; color:#44ff88; border:1px solid #2a4a2a;
     }
+
+    /* ── Event Log ───────────────────────────── */
+    #log-panel {
+      width:1346px; max-width:98vw;
+      margin-top:8px;
+      background:#0e0e1c; border:1px solid #2a2a4a; border-radius:6px;
+      padding:6px 12px;
+      max-height:130px; overflow-y:auto;
+      display:flex; flex-direction:column; gap:2px;
+    }
+    #log-panel-title {
+      font-size:10px; color:#3a3a6a; text-transform:uppercase;
+      letter-spacing:1.5px; margin-bottom:4px;
+      border-bottom:1px solid #1a1a32; padding-bottom:4px; flex-shrink:0;
+    }
+    .log-entry { font-size:10px; display:flex; gap:8px; flex-shrink:0; }
+    .log-ts    { color:#3a3a6a; flex-shrink:0; font-size:9px; }
+    .log-stage { color:#5577cc; flex-shrink:0; min-width:90px; }
+    .log-msg   { color:#aaaacc; flex:1; }
+    .log-s-working   { color:#ffd700; }
+    .log-s-done      { color:#44ff88; }
+    .log-s-error     { color:#ff4444; }
+    .log-s-thinking  { color:#cc88ff; }
+    .log-s-delegating{ color:#88ccff; }
+    .log-s-waiting   { color:#ff8c42; }
   </style>
 </head>
 <body>
@@ -315,6 +372,10 @@ HTML_PAGE = r"""<!DOCTYPE html>
       <div class="legend-item"><span class="dot" style="background:#ff4444"></span>error</div>
     </div>
     <div id="history-bar"></div>
+  </div>
+
+  <div id="log-panel">
+    <div id="log-panel-title">&#9654; Event Log</div>
   </div>
 
 <script>
@@ -797,6 +858,7 @@ function updateDemo(st) {
         st.agents[i].state     = "waiting";
         st.agents[i].taskLabel = st.paperLabel;
         st.statusText = `[ DEMO ] → Assigning [${STAGE_LABELS[i]}]`;
+        appendLog("orchestrator", "delegating \u2192 [" + STAGE_LABELS[i] + "]", "delegating");
       }
       break;
 
@@ -829,6 +891,7 @@ function updateDemo(st) {
         st.agents[i].state     = "working";
         st.agents[i].hasPaper  = true;
         st.statusText = `[ DEMO ] [${STAGE_LABELS[i]}] working...`;
+        appendLog(STAGE_LABELS[i], "working...", "working");
       }
       break;
 
@@ -849,6 +912,7 @@ function updateDemo(st) {
         st.walkT       = 0;
         st.orcHasPaper = false;
         st.statusText  = `[ DEMO ] [${STAGE_LABELS[i]}] done ✓`;
+        appendLog(STAGE_LABELS[i], "done \u2713", "done");
       }
       break;
 
@@ -1144,6 +1208,75 @@ function updateHistoryBar(history) {
 }
 
 // ─────────────────────────────────────────────
+// Event Log
+// ─────────────────────────────────────────────
+let _prevSv = null;
+
+function appendLog(stage, message, status) {
+  const panel = document.getElementById("log-panel");
+  const now   = new Date();
+  const ts    = now.toTimeString().slice(0, 8);
+  const cls   = { working:"log-s-working", done:"log-s-done", error:"log-s-error",
+                  thinking:"log-s-thinking", delegating:"log-s-delegating",
+                  waiting:"log-s-waiting" }[status] || "";
+  const entry = document.createElement("div");
+  entry.className = "log-entry";
+  entry.innerHTML =
+    '<span class="log-ts">[' + ts + ']</span>' +
+    '<span class="log-stage">' + stage + '</span>' +
+    '<span class="log-msg ' + cls + '">' + message + '</span>';
+  panel.appendChild(entry);
+  panel.scrollTop = panel.scrollHeight;
+}
+
+function diffAndLog(sv) {
+  const prev = _prevSv;
+  _prevSv = sv;
+  if (!prev) {
+    // First snapshot — log initial state if not idle
+    if (sv.orchestrator && sv.orchestrator !== "idle")
+      appendLog("orchestrator", "\u2192 " + sv.orchestrator, sv.orchestrator);
+    return;
+  }
+  // Orchestrator state change
+  if (sv.orchestrator !== prev.orchestrator)
+    appendLog("orchestrator", "\u2192 " + sv.orchestrator, sv.orchestrator);
+  // New agent delegated
+  if (sv.current_agent !== prev.current_agent) {
+    if (sv.current_agent)
+      appendLog("orchestrator", "delegating \u2192 [" + sv.current_agent + "]", "delegating");
+    else if (prev.current_agent)
+      appendLog("orchestrator", "[" + prev.current_agent + "] released", "done");
+  }
+  // Agent state change
+  if (sv.agent_state !== prev.agent_state && sv.current_agent) {
+    const extra = (sv.agent_state === "working" && sv.current_task)
+                  ? ": " + sv.current_task : "";
+    appendLog(sv.current_agent, sv.agent_state + extra, sv.agent_state);
+  } else if (sv.current_task !== prev.current_task && sv.current_task && sv.current_agent) {
+    appendLog(sv.current_agent, "task \u2192 " + sv.current_task, "working");
+  }
+  // New history entries (stage completed)
+  const prevLen = (prev.history || []).length;
+  if (sv.history && sv.history.length > prevLen) {
+    sv.history.slice(prevLen).forEach(function(h) {
+      appendLog(h.stage, "completed [" + h.status + "]", h.status === "done" ? "done" : "error");
+    });
+  }
+  // Task status changes
+  if (sv.tasks && prev.tasks) {
+    const prevMap = {};
+    prev.tasks.forEach(function(t) { prevMap[t.id] = t.status; });
+    sv.tasks.forEach(function(t) {
+      if (prevMap[t.id] && prevMap[t.id] !== t.status) {
+        const agentTag = t.agent ? " [" + t.agent + "]" : "";
+        appendLog("task" + agentTag, t.title + " \u2192 " + t.status, t.status === "completed" ? "done" : t.status === "in_progress" ? "working" : "waiting");
+      }
+    });
+  }
+}
+
+// ─────────────────────────────────────────────
 // window.onload
 // ─────────────────────────────────────────────
 window.onload = function () {
@@ -1176,6 +1309,7 @@ window.onload = function () {
           applyServerState(state, sv);
           taskText.textContent = sv.current_task || "Orchestrator idle";
           if (sv.tasks && sv.tasks.length>0) renderTaskPanel(sv.tasks);
+          diffAndLog(sv);
         } catch(err) { console.warn("SSE parse error", err); }
       };
       es.onerror = () => {
