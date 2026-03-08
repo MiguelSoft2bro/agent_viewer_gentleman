@@ -20,8 +20,8 @@ PORT_FILE = "/tmp/sdd_viewer.port"
 # ── Shared state ─────────────────────────────
 _lock        = threading.Lock()
 _state       = {
-    "orchestrator":  "idle",   # idle | thinking | delegating
-    "current_agent": None,     # None | explore | propose | spec | design | tasks | apply | verify
+    "orchestrator":  "idle",   # idle | thinking | reviewing | delegating
+    "current_agent": None,     # None | explore | propose | spec | design | tasks | apply | verify | archive
     "agent_state":   "idle",   # idle | working | done | error
     "current_task":  "",       # current task description (short)
     "history":       [],       # [{"stage":"...", "status":"done", "ts":...}]
@@ -130,7 +130,17 @@ class ViewerHandler(BaseHTTPRequestHandler):
                        "current_task", "history", "tasks"}
             with _lock:
                 for k, v in incoming.items():
-                    if k in allowed:
+                    if k not in allowed:
+                        continue
+                    if k == "history" and isinstance(v, list):
+                        # Gap 3 fix: accumulate history, don't replace.
+                        # Dedup by stage name — keep latest entry per stage.
+                        existing = {e["stage"]: e for e in _state["history"]}
+                        for entry in v:
+                            if isinstance(entry, dict) and "stage" in entry:
+                                existing[entry["stage"]] = entry
+                        _state["history"] = list(existing.values())
+                    else:
                         _state[k] = v
                 payload = json.dumps(_state)
                 _broadcast(payload)
@@ -284,7 +294,7 @@ HTML_PAGE = r"""<!DOCTYPE html>
   </div>
 
   <div id="main-layout">
-    <canvas id="canvas" width="960" height="460"></canvas>
+    <canvas id="canvas" width="1090" height="460"></canvas>
     <div id="task-panel">
       <div id="task-panel-title">📋 Tasks</div>
       <div id="task-list"><span style="color:#2a2a5a;font-size:11px">no tasks yet...</span></div>
@@ -325,12 +335,12 @@ const ANIM_PERIOD  = 18;
 const PAPER_W = 10;   // px on canvas (not scaled)
 const PAPER_H = 13;
 
-const STAGE_LABELS = ["explore","propose","spec","design","tasks","apply","verify"];
+const STAGE_LABELS = ["explore","propose","spec","design","tasks","apply","verify","archive"];
 const N_STAGES     = STAGE_LABELS.length;
 
 const STAGE_COLORS = [
   "#1a2a1a","#2a1a2a","#2a2a1a","#1a2a2a",
-  "#2a1a1a","#1a1a2a","#1a2a20",
+  "#2a1a1a","#1a1a2a","#1a2a20","#2a1a0a",
 ];
 
 // ─────────────────────────────────────────────
@@ -369,11 +379,13 @@ const AGENT_SKINS = [
   [0,1].map(f=>makeSprite("#ff8800","#cc5500","#993300","#ee6600","#ffddb0",f)), // tasks   — manager orange
   [0,1].map(f=>makeSprite("#33ff55","#117722","#004411","#22aa33","#aaffcc",f)), // apply   — builder lime
   [0,1].map(f=>makeSprite("#ff3366","#aa1133","#770011","#cc2244","#ffaacc",f)), // verify  — inspector pink
+  [0,1].map(f=>makeSprite("#ddaa22","#996600","#664400","#bb8800","#ffeeaa",f)), // archive — archivist gold
 ];
 const DONE_FRAMES  = [0,0].map(f=>makeSprite("#44ff88","#22884a","#116630","#33bb66","#ccffee",f));
 const WAIT_FRAMES  = [0,1].map(f=>makeSprite("#ff8c42","#cc5511","#aa3300","#ee7733","#ffddcc",f));
 const ERROR_FRAMES = [0,1].map(f=>makeSprite("#ff4444","#aa1111","#880000","#cc2222","#ffaaaa",f));
-const THINK_FRAMES = [0,1].map(f=>makeSprite("#cc88ff","#7744aa","#552288","#9966cc","#ffffff",f));
+const THINK_FRAMES  = [0,1].map(f=>makeSprite("#cc88ff","#7744aa","#552288","#9966cc","#ffffff",f));
+const REVIEW_FRAMES = [0,1].map(f=>makeSprite("#88ffcc","#2a9966","#1a6644","#44bb88","#ccffee",f));
 
 // ── Thought bubble icons per agent state ──────
 // Unicode symbols safe in Courier New on all platforms (no emoji)
@@ -488,7 +500,7 @@ function drawThoughtBubble(ctx, cx, topY, icon, tick, color) {
 // ─────────────────────────────────────────────
 // Layout  (canvas now 960×460)
 // ─────────────────────────────────────────────
-const CANVAS_W   = 960;
+const CANVAS_W   = 1090;
 const CANVAS_H   = 460;
 const HUB_X      = CANVAS_W / 2 - SPR_W / 2;
 const HUB_Y      = 60;
@@ -543,7 +555,7 @@ function createState() {
     tasks: [],
 
     // Reset scheduling
-    _resetScheduled: false,
+    _resetHandle: null,          // setTimeout handle — null means no reset pending
 
     // Demo
     demoPhase: "pause_start",
@@ -577,6 +589,13 @@ function applyServerState(st, sv) {
   if (agent !== null) {
     const idx = STAGE_LABELS.indexOf(agent);
     if (idx !== -1) {
+
+      // Gap 5: explicit idle signal — clear the agent visual immediately
+      if (astate === "idle") {
+        st.agents[idx].state     = "idle";
+        st.agents[idx].hasPaper  = false;
+        st.agents[idx].taskLabel = null;
+      }
 
       if (astate === "working" || astate === "waiting") {
         // Find active task title for this agent
@@ -630,22 +649,24 @@ function applyServerState(st, sv) {
   // ── Full reset when orchestrator goes idle ────
   // Schedule agents back to idle after a short display window
   if (sv.orchestrator === "idle" && agent === null) {
-    if (!st._resetScheduled) {
-      st._resetScheduled = true;
-      setTimeout(() => {
+    if (st._resetHandle === null) {
+      st._resetHandle = setTimeout(() => {
         st.agents.forEach(a => {
           a.state     = "idle";
           a.hasPaper  = false;
           a.taskLabel = null;
         });
-        st.tasks           = [];
-        st._resetScheduled = false;
+        st.tasks        = [];
+        st._resetHandle = null;
         renderTaskPanel([]);
       }, 3000);   // 3 s display window so user can read done states
     }
   } else {
     // Cancel pending reset if orchestrator becomes active again
-    st._resetScheduled = false;
+    if (st._resetHandle !== null) {
+      clearTimeout(st._resetHandle);
+      st._resetHandle = null;
+    }
   }
 
   if (sv.history && sv.history.length > 0) {
@@ -688,6 +709,11 @@ function updateLive(st) {
         st.orcHasPaper = false;
         const idx = st.currentStage;
         st.agents[idx].hasPaper = true;
+        // Gap 2 fix: agent was in 'waiting' while orc was walking over;
+        // now that paper is delivered, force it to 'working' if it wasn't already done/error
+        if (st.agents[idx].state === "waiting") {
+          st.agents[idx].state = "working";
+        }
       }
       break;
 
@@ -966,7 +992,9 @@ function render(ctx, st) {
 
   // ── Orchestrator ──────────────────────────────
   const isWalking = st.phase==="walking_to"||st.phase==="walking_back";
-  const orcFrames = st.orchestratorState==="thinking" ? THINK_FRAMES : ORC_FRAMES;
+  const orcFrames = st.orchestratorState==="thinking"  ? THINK_FRAMES
+                  : st.orchestratorState==="reviewing" ? REVIEW_FRAMES
+                  : ORC_FRAMES;
   const orcX = Math.round(st.orc.x);
   const orcY = Math.round(st.orc.y);
 
@@ -979,6 +1007,7 @@ function render(ctx, st) {
 
   // Orchestrator label
   const orcColor = st.orchestratorState==="thinking"   ? "#cc88ff"
+                 : st.orchestratorState==="reviewing"  ? "#88ffcc"
                  : st.orchestratorState==="delegating" ? "#ffd700"
                  : "#888899";
   ctx.fillStyle = orcColor;
@@ -1003,12 +1032,13 @@ function render(ctx, st) {
     drawPaper(ctx, px, py, st.paperLabel, true);
   }
 
-  // ── Thinking pulse ring ───────────────────────
-  if (st.orchestratorState==="thinking") {
+  // ── Thinking / reviewing pulse ring ──────────
+  if (st.orchestratorState==="thinking" || st.orchestratorState==="reviewing") {
+    const ringColor = st.orchestratorState==="reviewing" ? "136,255,204" : "200,136,255";
     const cx = orcX + SPR_W/2;
     const cy = orcY + SPR_H/2;
     const r  = SPR_W*0.8 + Math.sin(tick*0.1)*4;
-    ctx.strokeStyle = `rgba(200,136,255,${0.3+0.2*Math.sin(tick*0.1)})`;
+    ctx.strokeStyle = `rgba(${ringColor},${0.3+0.2*Math.sin(tick*0.1)})`;
     ctx.lineWidth   = 2;
     ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.stroke();
   }
@@ -1016,6 +1046,8 @@ function render(ctx, st) {
   // ── Orchestrator thought bubble ───────────────
   if (st.orchestratorState === "thinking") {
     drawThoughtBubble(ctx, orcX + SPR_W/2, orcY, "⚙", tick, "#cc88ff");
+  } else if (st.orchestratorState === "reviewing") {
+    drawThoughtBubble(ctx, orcX + SPR_W/2, orcY, "◉", tick, "#88ffcc");
   } else if (st.orchestratorState === "delegating") {
     drawThoughtBubble(ctx, orcX + SPR_W/2, orcY, "→", tick, "#ffd700");
   }

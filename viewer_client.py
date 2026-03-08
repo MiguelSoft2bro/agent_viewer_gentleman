@@ -45,9 +45,9 @@ def notify(
     Push state update to the running viewer.
     Returns True on success, False if viewer is unreachable (silent).
 
-    orchestrator : "idle" | "thinking" | "delegating"
+    orchestrator : "idle" | "thinking" | "reviewing" | "delegating"
     current_agent: None  | "explore" | "propose" | "spec" | "design"
-                          | "tasks"   | "apply"   | "verify"
+                          | "tasks"   | "apply"   | "verify" | "archive"
     agent_state  : "idle" | "working" | "done" | "error"
     current_task : short human-readable description of what's happening
     history      : list of {"stage": str, "status": "done"|"error", "ts": float}
