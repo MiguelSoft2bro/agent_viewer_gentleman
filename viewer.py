@@ -392,7 +392,7 @@ const REVIEW_FRAMES = [0,1].map(f=>makeSprite("#88ffcc","#2a9966","#1a6644","#44
 const BUBBLE_ICONS = {
   idle:     null,       // no bubble when fully idle
   thinking: "⚙",       // gear = processing
-  working:  "✎",       // pencil = writing/coding
+  working:  null,       // spinner drawn separately via drawLoadingSpinner
   waiting:  "…",       // ellipsis = waiting
   done:     "✓",       // checkmark
   error:    "✗",       // cross
@@ -498,7 +498,44 @@ function drawThoughtBubble(ctx, cx, topY, icon, tick, color) {
 }
 
 // ─────────────────────────────────────────────
-// Layout  (canvas now 960×460)
+// Loading spinner — shown above agent head when state==="working"
+// cx: center X, topY: sprite top Y, tick: animation tick, color: ring color
+// ─────────────────────────────────────────────
+function drawLoadingSpinner(ctx, cx, topY, tick, color) {
+  // Same floating bob as thought bubble so it feels consistent
+  const bob = Math.sin(tick * 0.07) * 3;
+  const cy  = topY - 22 + bob;   // center of spinner, above head
+  const r   = 7;                  // spinner radius (px)
+
+  // Track ring (faint background circle)
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.strokeStyle = "rgba(255,255,255,0.15)";
+  ctx.lineWidth   = 2.5;
+  ctx.stroke();
+
+  // Spinning arc — 270° arc, rotates at ~1.5 rev/s at 60fps
+  const angle  = (tick * 0.12) % (Math.PI * 2);   // full rotation period ~52 ticks ≈ 0.87s
+  const arcLen = Math.PI * 1.5;                    // 270° arc
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, angle, angle + arcLen);
+  ctx.strokeStyle = color || "#ffd700";
+  ctx.lineWidth   = 2.5;
+  ctx.lineCap     = "round";
+  ctx.stroke();
+  ctx.lineCap     = "butt";
+
+  // Bright leading dot at arc tip
+  const tipX = cx + Math.cos(angle + arcLen) * r;
+  const tipY = cy + Math.sin(angle + arcLen) * r;
+  ctx.beginPath();
+  ctx.arc(tipX, tipY, 1.5, 0, Math.PI * 2);
+  ctx.fillStyle = color || "#ffd700";
+  ctx.fill();
+}
+
+// ─────────────────────────────────────────────
+// Layout  (canvas now 1090×460)
 // ─────────────────────────────────────────────
 const CANVAS_W   = 1090;
 const CANVAS_H   = 460;
@@ -957,16 +994,21 @@ function render(ctx, st) {
     drawSprite(ctx, frames, frame, ag.x, ag.y+yOff);
     ctx.globalAlpha = 1;
 
-    // ── Thought bubble above agent head ──────────
+    // ── Thought bubble / spinner above agent head ─
     // Head color from the agent's own skin (first pixel of first frame, row 0 col 6)
     const skinHeadColor = AGENT_SKINS[i][0][0][6];  // frame0, row0, col6
-    const bubIcon  = BUBBLE_ICONS[ag.state];
-    const bubColor = (ag.state==="idle" || ag.state==="working")
-      ? skinHeadColor
-      : { waiting:"#ff8c42", done:"#44ff88", error:"#ff4444" }[ag.state]
-        || "rgba(160,160,220,0.9)";
-    if (bubIcon) {
-      drawThoughtBubble(ctx, ag.x + SPR_W/2, ag.y + yOff, bubIcon, tick + i*17, bubColor);
+    if (ag.state === "working") {
+      // Loading spinner — replaces thought bubble while agent is processing
+      drawLoadingSpinner(ctx, ag.x + SPR_W/2, ag.y + yOff, tick + i*17, skinHeadColor);
+    } else {
+      const bubIcon  = BUBBLE_ICONS[ag.state];
+      const bubColor = (ag.state==="idle")
+        ? skinHeadColor
+        : { waiting:"#ff8c42", done:"#44ff88", error:"#ff4444" }[ag.state]
+          || "rgba(160,160,220,0.9)";
+      if (bubIcon) {
+        drawThoughtBubble(ctx, ag.x + SPR_W/2, ag.y + yOff, bubIcon, tick + i*17, bubColor);
+      }
     }
 
     // State badge
