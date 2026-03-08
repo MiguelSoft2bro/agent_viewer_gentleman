@@ -359,7 +359,17 @@ function makeSprite(H, B, L, A, E, frame) {
 }
 
 const ORC_FRAMES   = [0,1].map(f=>makeSprite("#ffd700","#d4882a","#c8701a","#e8a030","#ffffff",f));
-const AGENT_FRAMES = [0,1].map(f=>makeSprite("#5588ff","#2244aa","#113388","#3366cc","#aaddff",f));
+// Per-agent idle/working skins — indexed by STAGE_LABELS order
+// [explore, propose, spec, design, tasks, apply, verify]
+const AGENT_SKINS = [
+  [0,1].map(f=>makeSprite("#66bb44","#336622","#224411","#448833","#ccffaa",f)), // explore — scout green
+  [0,1].map(f=>makeSprite("#cc55ff","#7722aa","#551188","#9933cc","#ffccff",f)), // propose — designer purple
+  [0,1].map(f=>makeSprite("#cc9955","#8b5c2a","#6b3c0a","#aa7733","#fff0cc",f)), // spec    — scribe beige
+  [0,1].map(f=>makeSprite("#22ddcc","#116688","#0a4455","#1199aa","#aaffff",f)), // design  — architect cyan
+  [0,1].map(f=>makeSprite("#ff8800","#cc5500","#993300","#ee6600","#ffddb0",f)), // tasks   — manager orange
+  [0,1].map(f=>makeSprite("#33ff55","#117722","#004411","#22aa33","#aaffcc",f)), // apply   — builder lime
+  [0,1].map(f=>makeSprite("#ff3366","#aa1133","#770011","#cc2244","#ffaacc",f)), // verify  — inspector pink
+];
 const DONE_FRAMES  = [0,0].map(f=>makeSprite("#44ff88","#22884a","#116630","#33bb66","#ccffee",f));
 const WAIT_FRAMES  = [0,1].map(f=>makeSprite("#ff8c42","#cc5511","#aa3300","#ee7733","#ffddcc",f));
 const ERROR_FRAMES = [0,1].map(f=>makeSprite("#ff4444","#aa1111","#880000","#cc2222","#ffaaaa",f));
@@ -896,12 +906,12 @@ function render(ctx, st) {
   // ── Sub-agents ────────────────────────────────
     for (let i=0; i<N_STAGES; i++) {
     const ag = st.agents[i];
-    let frames = AGENT_FRAMES;
+    let frames = AGENT_SKINS[i];
     let frame  = 0;
     let yOff   = 0;
 
     if (ag.state==="idle") {
-      frames = AGENT_FRAMES; frame = 0;
+      frames = AGENT_SKINS[i]; frame = 0;
       // Soft breathing: ±1px slow sine, phase-offset per agent so they don't sync
       yOff = Math.sin(tick * 0.04 + i * 1.3) * 1;
     }
@@ -911,7 +921,7 @@ function render(ctx, st) {
       // no yOff — waiting is still
     }
     else if (ag.state==="working") {
-      frames = AGENT_FRAMES; frame = animFrame;
+      frames = AGENT_SKINS[i]; frame = animFrame;
       // Typing-style dip: always downward push 0→-3px
       yOff = Math.abs(Math.sin(tick * 0.3 + i)) * -3;
     }
@@ -922,11 +932,13 @@ function render(ctx, st) {
     ctx.globalAlpha = 1;
 
     // ── Thought bubble above agent head ──────────
+    // Head color from the agent's own skin (first pixel of first frame, row 0 col 6)
+    const skinHeadColor = AGENT_SKINS[i][0][0][6];  // frame0, row0, col6
     const bubIcon  = BUBBLE_ICONS[ag.state];
-    const bubColor = {
-      idle:"rgba(100,100,180,0.7)", working:"#ffd700",
-      waiting:"#ff8c42", done:"#44ff88", error:"#ff4444"
-    }[ag.state] || "rgba(160,160,220,0.9)";
+    const bubColor = (ag.state==="idle" || ag.state==="working")
+      ? skinHeadColor
+      : { waiting:"#ff8c42", done:"#44ff88", error:"#ff4444" }[ag.state]
+        || "rgba(160,160,220,0.9)";
     if (bubIcon) {
       drawThoughtBubble(ctx, ag.x + SPR_W/2, ag.y + yOff, bubIcon, tick + i*17, bubColor);
     }
