@@ -1,89 +1,83 @@
 # SDD Agent Viewer
 
-Visual dashboard for the [Gentleman Skills](https://github.com/gentleman-org/Gentleman-Skills) SDD orchestrator.
+Visual dashboard for the [agent-teams-lite](https://github.com/Gentleman-Programming/agent-teams-lite) SDD orchestrator.
 
-Shows the orchestrator and each sub-agent as pixel-art characters animating through the SDD pipeline in real time.
+> **This project is an extension of agent-teams-lite.**
+> You need to install it first before using this viewer.
 
-![viewer demo](https://raw.githubusercontent.com/gentleman-org/agent_viewer/main/docs/demo.gif)
-
----
-
-## What it does
-
-When you run an SDD command (`/sdd-new`, `/sdd-ff`, `/sdd-apply`, etc.) in opencode, the orchestrator pushes live state to the viewer via HTTP. You see:
-
-- Which agent is currently working (explore, propose, spec, design, tasks, apply, verify, archive)
-- The current task description
-- History of completed stages
-- Task list with statuses
+Shows the orchestrator and each sub-agent as pixel-art characters animating through the SDD pipeline in real time — just for fun 🎮
 
 ---
 
 ## Requirements
 
-- Python 3.10+
-- [opencode](https://opencode.ai) with the [Gentleman Skills](https://github.com/gentleman-org/Gentleman-Skills) SDD system prompt
-- `~/.local/bin` in your `$PATH`
+1. **[agent-teams-lite](https://github.com/Gentleman-Programming/agent-teams-lite)** — install this first
+2. **Python 3.10+**
+3. **[opencode](https://opencode.ai)**
+4. **`~/.local/bin` in your `$PATH`**
 
 ---
 
 ## Installation
 
 ```bash
-git clone https://github.com/gentleman-org/agent_viewer.git
-cd agent_viewer
+# 1. Install agent-teams-lite first (if you haven't)
+#    → https://github.com/Gentleman-Programming/agent-teams-lite
+
+# 2. Clone and install this viewer
+git clone https://github.com/MiguelSoft2bro/agent_viewer_gentleman.git
+cd agent_viewer_gentleman
 bash install.sh
 ```
 
-The installer does two things:
-
-1. **Creates `~/.local/bin/viewer`** — a global wrapper so you can run `viewer` from anywhere.
-2. **Patches `~/.config/opencode/opencode.json`** — adds the auto-launch rule so you can just say *"arranca el viewer"* inside opencode and it starts automatically.
-
-> If `opencode.json` doesn't exist yet, run opencode once first, then re-run `install.sh`.
+The installer will:
+- ✅ Check that **agent-teams-lite is installed** — if not, it stops and tells you where to get it
+- ✅ Create `~/.local/bin/viewer` — global command accessible from anywhere
+- ✅ Patch `~/.config/opencode/opencode.json` with:
+  - Auto-launch rule → say *"arranca el viewer"* in opencode and it starts
+  - VIEWER INTEGRATION block in the SDD orchestrator prompt → every pipeline phase notifies the viewer automatically
 
 ---
 
 ## Usage
 
-### Start manually
+### Start the viewer
 
 ```bash
 viewer
 ```
 
-Opens the dashboard in your browser at `http://localhost:8765` (or next available port).
+Opens the dashboard in your browser at `http://localhost:8765`.
 
 ### Start from opencode
 
-Just say: **"arranca el viewer"** — the orchestrator will launch it automatically.
+Just say: **"arranca el viewer"**
 
-### Simulate the full SDD pipeline (demo)
+### Run the full SDD pipeline demo
 
 ```bash
 python3 viewer_client.py test
 ```
 
-Sends all pipeline stages with 1.5s delays so you can see the animations.
+Sends all 8 SDD stages (explore → propose → spec → design → tasks → apply → verify → archive) with animated transitions so you can see all the characters in action.
 
 ---
 
 ## How it works
 
 ```
-opencode SDD orchestrator
+opencode (agent-teams-lite SDD orchestrator)
         │
         │  POST /state  (curl, fire-and-forget)
         ▼
    viewer.py  ──── SSE ──▶  browser dashboard
         │
-        └── writes /tmp/sdd_viewer.port  (port discovery)
+        └── /tmp/sdd_viewer.port  (port discovery across projects)
 ```
 
-- `viewer.py` — single-file Python server (stdlib only, no pip installs)
-- `viewer_client.py` — Python client + CLI for sending state updates
-- `/tmp/sdd_viewer.port` — port file written at startup for cross-project discovery
-- The orchestrator uses `curl` directly (no Python path required)
+- `viewer.py` — single-file Python server (stdlib only, zero pip installs)
+- `viewer_client.py` — Python client + CLI for pushing state updates
+- The orchestrator notifies via plain `curl` — no Python path needed
 
 ---
 
@@ -91,24 +85,9 @@ opencode SDD orchestrator
 
 | File | Description |
 |------|-------------|
-| `viewer.py` | Main server — HTTP + SSE + pixel-art HTML/JS frontend |
-| `viewer_client.py` | Python client for sending state; also usable as CLI |
+| `viewer.py` | Server + pixel-art HTML/JS frontend (single file) |
+| `viewer_client.py` | State push client — also usable as CLI |
 | `install.sh` | One-command installer |
-
----
-
-## Manual opencode integration (if install.sh can't patch it)
-
-Add this to the `instructions` array in `~/.config/opencode/opencode.json`:
-
-```
-VIEWER AUTO-LAUNCH RULE:
-If the user says anything like "abre el viewer", "arranca el viewer", "start viewer" or similar
-— immediately run Bash:
-  _OWNER=$(ps -o ppid= -p $PPID | tr -d ' '); viewer --owner-pid $_OWNER > /tmp/viewer.log 2>&1 &
-then confirm: "✅ Viewer lanzado — http://localhost:<port>"
-Do NOT ask for confirmation. Do NOT open a new terminal.
-```
 
 ---
 

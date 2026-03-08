@@ -2,22 +2,27 @@
 # ─────────────────────────────────────────────────────────────
 # install.sh — SDD Agent Viewer installer
 #
+# This project is an extension of agent-teams-lite (Gentleman Skills).
+# You MUST have it installed first:
+#   https://github.com/Gentleman-Programming/agent-teams-lite
+#
 # What it does:
-#   1. Creates ~/.local/bin/viewer  (global launcher, points to this repo)
-#   2. Patches ~/.config/opencode/opencode.json with:
+#   1. Checks that agent-teams-lite (sdd-orchestrator) is installed
+#   2. Creates ~/.local/bin/viewer  (global launcher, points to this repo)
+#   3. Patches ~/.config/opencode/opencode.json with:
 #      a) Auto-launch rule (say "arranca el viewer" in opencode)
-#      b) VIEWER INTEGRATION block in sdd-orchestrator agent prompt
-#         so every SDD phase notifies the viewer in real time.
-#         Works whether or not you have Gentleman Skills installed.
+#      b) VIEWER INTEGRATION block in sdd-orchestrator prompt
+#         so every SDD phase notifies the viewer in real time
 #
 # Requirements:
+#   - agent-teams-lite  → https://github.com/Gentleman-Programming/agent-teams-lite
 #   - Python 3.10+
-#   - opencode installed (https://opencode.ai)
-#   - ~/.local/bin must be in your $PATH
+#   - opencode          → https://opencode.ai
+#   - ~/.local/bin in your $PATH
 #
 # Usage:
-#   git clone https://github.com/gentleman-org/agent_viewer.git
-#   cd agent_viewer
+#   git clone https://github.com/MiguelSoft2bro/agent_viewer_gentleman.git
+#   cd agent_viewer_gentleman
 #   bash install.sh
 # ─────────────────────────────────────────────────────────────
 
@@ -27,11 +32,13 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BIN_DIR="$HOME/.local/bin"
 VIEWER_BIN="$BIN_DIR/viewer"
 OPENCODE_JSON="$HOME/.config/opencode/opencode.json"
+AGENT_TEAMS_URL="https://github.com/Gentleman-Programming/agent-teams-lite"
 
 CYAN='\033[0;36m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
+BOLD='\033[1m'
 NC='\033[0m'
 
 echo ""
@@ -48,10 +55,51 @@ fi
 PY_VER=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
 echo -e "${GREEN}✓ Python $PY_VER found${NC}"
 
-# ── 2. Create ~/.local/bin if missing ────────────────────────
+# ── 2. Check opencode.json exists ────────────────────────────
+if [ ! -f "$OPENCODE_JSON" ]; then
+    echo ""
+    echo -e "${RED}✗ opencode.json not found at $OPENCODE_JSON${NC}"
+    echo -e "  Run opencode at least once to generate the config, then re-run install.sh."
+    echo ""
+    exit 1
+fi
+echo -e "${GREEN}✓ opencode.json found${NC}"
+
+# ── 3. Check agent-teams-lite is installed ───────────────────
+HAS_ORCHESTRATOR=$(python3 - "$OPENCODE_JSON" << 'PYEOF'
+import sys, json
+try:
+    with open(sys.argv[1]) as f:
+        config = json.load(f)
+    has = "sdd-orchestrator" in config.get("agent", {})
+    print("yes" if has else "no")
+except Exception:
+    print("no")
+PYEOF
+)
+
+if [ "$HAS_ORCHESTRATOR" != "yes" ]; then
+    echo ""
+    echo -e "${RED}╔══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${RED}║   ✗  agent-teams-lite is not installed                   ║${NC}"
+    echo -e "${RED}╚══════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "  This viewer is an extension of ${BOLD}agent-teams-lite${NC}."
+    echo -e "  You need to install it first:"
+    echo ""
+    echo -e "  ${CYAN}${AGENT_TEAMS_URL}${NC}"
+    echo ""
+    echo -e "  Follow the instructions there, then come back and run:"
+    echo -e "  ${CYAN}bash install.sh${NC}"
+    echo ""
+    exit 1
+fi
+echo -e "${GREEN}✓ agent-teams-lite detected (sdd-orchestrator present)${NC}"
+
+# ── 4. Create ~/.local/bin if missing ────────────────────────
 mkdir -p "$BIN_DIR"
 
-# ── 3. Write the global viewer wrapper ───────────────────────
+# ── 5. Write the global viewer wrapper ───────────────────────
 cat > "$VIEWER_BIN" << WRAPPER
 #!/bin/sh
 # SDD Agent Viewer — global launcher
@@ -63,7 +111,7 @@ WRAPPER
 chmod +x "$VIEWER_BIN"
 echo -e "${GREEN}✓ Global command installed: $VIEWER_BIN${NC}"
 
-# ── 4. Check ~/.local/bin is in PATH ────────────────────────
+# ── 6. Check ~/.local/bin is in PATH ────────────────────────
 if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
     echo ""
     echo -e "${YELLOW}⚠ $BIN_DIR is not in your PATH.${NC}"
@@ -72,14 +120,8 @@ if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
     echo ""
 fi
 
-# ── 5. Patch opencode.json ────────────────────────────────────
-if [ ! -f "$OPENCODE_JSON" ]; then
-    echo -e "${YELLOW}⚠ opencode.json not found at $OPENCODE_JSON${NC}"
-    echo -e "  Skipping opencode integration patch."
-    echo -e "  Run opencode once to generate the config, then re-run install.sh."
-    echo ""
-else
-    python3 - "$OPENCODE_JSON" << 'PYEOF'
+# ── 7. Patch opencode.json ────────────────────────────────────
+python3 - "$OPENCODE_JSON" << 'PYEOF'
 import sys, json, os
 
 config_path = sys.argv[1]
@@ -89,7 +131,7 @@ with open(config_path, "r") as f:
 
 changed = False
 
-# ── 5a. Auto-launch rule in top-level instructions ────────────
+# ── 7a. Auto-launch rule in top-level instructions ────────────
 AUTO_LAUNCH = (
     'VIEWER AUTO-LAUNCH RULE:\n'
     'If the user says anything like "abre el viewer", "abrir viewer", "open viewer", '
@@ -114,7 +156,7 @@ if not any("VIEWER AUTO-LAUNCH RULE" in str(i) for i in instructions):
 else:
     print("  → Auto-launch rule already present, skipping.")
 
-# ── 5b. VIEWER INTEGRATION block in sdd-orchestrator prompt ──
+# ── 7b. VIEWER INTEGRATION block in sdd-orchestrator prompt ──
 VIEWER_INTEGRATION = (
     "\nVIEWER INTEGRATION (optional, silent-fail):\n"
     "If /tmp/sdd_viewer.port exists, a visual dashboard may be running.\n"
@@ -146,23 +188,11 @@ orch = agents.get("sdd-orchestrator", {})
 prompt = orch.get("prompt", "")
 
 if "VIEWER INTEGRATION" not in prompt:
-    if prompt:
-        # Append to existing orchestrator prompt
-        orch["prompt"] = prompt.rstrip() + "\n" + VIEWER_INTEGRATION
-        agents["sdd-orchestrator"] = orch
-        config["agent"] = agents
-        changed = True
-        print("  → VIEWER INTEGRATION block added to sdd-orchestrator prompt.")
-    else:
-        # No sdd-orchestrator yet — create a minimal one
-        agents["sdd-orchestrator"] = {
-            "mode": "all",
-            "description": "SDD Orchestrator",
-            "prompt": VIEWER_INTEGRATION.strip()
-        }
-        config["agent"] = agents
-        changed = True
-        print("  → sdd-orchestrator agent created with VIEWER INTEGRATION block.")
+    orch["prompt"] = prompt.rstrip() + "\n" + VIEWER_INTEGRATION
+    agents["sdd-orchestrator"] = orch
+    config["agent"] = agents
+    changed = True
+    print("  → VIEWER INTEGRATION block added to sdd-orchestrator prompt.")
 else:
     print("  → VIEWER INTEGRATION already present in sdd-orchestrator, skipping.")
 
@@ -177,18 +207,17 @@ else:
     print("  → No changes needed.")
 PYEOF
 
-    echo -e "${GREEN}✓ opencode.json patched${NC}"
-fi
+echo -e "${GREEN}✓ opencode.json patched${NC}"
 
-# ── 6. Done ──────────────────────────────────────────────────
+# ── 8. Done ──────────────────────────────────────────────────
 echo ""
 echo -e "${GREEN}╔══════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║         Installation complete!       ║${NC}"
+echo -e "${GREEN}║         Installation complete! 🎉    ║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════╝${NC}"
 echo ""
-echo -e "  ${CYAN}viewer${NC}               → start the dashboard"
-echo -e "  ${CYAN}viewer --help${NC}        → show options"
-echo -e "  ${CYAN}python3 viewer_client.py test${NC}  → run full demo"
+echo -e "  ${CYAN}viewer${NC}                         → start the dashboard"
+echo -e "  ${CYAN}viewer --help${NC}                  → show options"
+echo -e "  ${CYAN}python3 viewer_client.py test${NC}  → run full SDD demo"
 echo ""
 echo -e "  In opencode, just say: ${CYAN}\"arranca el viewer\"${NC}"
 echo ""
