@@ -532,6 +532,9 @@ function createState() {
     // Task list (from server)
     tasks: [],
 
+    // Reset scheduling
+    _resetScheduled: false,
+
     // Demo
     demoPhase: "pause_start",
     demoTimer: 40,
@@ -612,6 +615,27 @@ function applyServerState(st, sv) {
     st.walkDst     = { x: HUB_X, y: HUB_Y };
     st.walkT       = 0;
     st.orcHasPaper = false;
+  }
+
+  // ── Full reset when orchestrator goes idle ────
+  // Schedule agents back to idle after a short display window
+  if (sv.orchestrator === "idle" && agent === null) {
+    if (!st._resetScheduled) {
+      st._resetScheduled = true;
+      setTimeout(() => {
+        st.agents.forEach(a => {
+          a.state     = "idle";
+          a.hasPaper  = false;
+          a.taskLabel = null;
+        });
+        st.tasks           = [];
+        st._resetScheduled = false;
+        renderTaskPanel([]);
+      }, 3000);   // 3 s display window so user can read done states
+    }
+  } else {
+    // Cancel pending reset if orchestrator becomes active again
+    st._resetScheduled = false;
   }
 
   if (sv.history && sv.history.length > 0) {
