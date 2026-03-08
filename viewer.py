@@ -365,6 +365,17 @@ const WAIT_FRAMES  = [0,1].map(f=>makeSprite("#ff8c42","#cc5511","#aa3300","#ee7
 const ERROR_FRAMES = [0,1].map(f=>makeSprite("#ff4444","#aa1111","#880000","#cc2222","#ffaaaa",f));
 const THINK_FRAMES = [0,1].map(f=>makeSprite("#cc88ff","#7744aa","#552288","#9966cc","#ffffff",f));
 
+// ── Thought bubble icons per agent state ──────
+// Unicode symbols safe in Courier New on all platforms (no emoji)
+const BUBBLE_ICONS = {
+  idle:     null,       // no bubble when fully idle
+  thinking: "⚙",       // gear = processing
+  working:  "✎",       // pencil = writing/coding
+  waiting:  "…",       // ellipsis = waiting
+  done:     "✓",       // checkmark
+  error:    "✗",       // cross
+};
+
 function drawSprite(ctx, frames, frameIndex, x, y) {
   const frame = frames[frameIndex % frames.length];
   for (let row=0; row<16; row++) {
@@ -414,6 +425,54 @@ function drawPaper(ctx, x, y, label, glowing) {
 
 function truncate(s, n) {
   return s && s.length > n ? s.slice(0, n-1)+"…" : (s||"");
+}
+
+// ─────────────────────────────────────────────
+// Thought bubble — floats above character head
+// cx: center X of sprite, topY: Y of sprite top
+// icon: string from BUBBLE_ICONS, tick: animation tick
+// ─────────────────────────────────────────────
+function drawThoughtBubble(ctx, cx, topY, icon, tick, color) {
+  // Floating bob: ±3px slow sine
+  const bob = Math.sin(tick * 0.07) * 3;
+  const bw  = 26, bh = 16;
+  const bx  = cx - bw / 2;
+  const by  = topY - 30 + bob;
+
+  // Bubble fill
+  ctx.fillStyle = "rgba(255,255,255,0.88)";
+  ctx.beginPath();
+  ctx.roundRect(bx, by, bw, bh, 4);
+  ctx.fill();
+
+  // Bubble border (tinted by state color)
+  ctx.strokeStyle = color || "rgba(160,160,220,0.9)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(bx, by, bw, bh, 4);
+  ctx.stroke();
+
+  // Tail: 3 diminishing dots below bubble, centered
+  const tailCx = cx;
+  const tailStartY = by + bh + 3;
+  const tailSizes  = [2.0, 1.5, 1.0];
+  for (let d = 0; d < 3; d++) {
+    ctx.fillStyle = "rgba(255,255,255,0.88)";
+    ctx.beginPath();
+    ctx.arc(tailCx, tailStartY + d * 4, tailSizes[d], 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = color || "rgba(160,160,220,0.7)";
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+  }
+
+  // Icon centered in bubble
+  ctx.font         = "11px 'Courier New',monospace";
+  ctx.textAlign    = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle    = color || "#333366";
+  ctx.fillText(icon, cx, by + bh / 2);
+  ctx.textBaseline = "alphabetic";
 }
 
 // ─────────────────────────────────────────────
@@ -811,21 +870,42 @@ function render(ctx, st) {
   }
 
   // ── Sub-agents ────────────────────────────────
-  for (let i=0; i<N_STAGES; i++) {
+    for (let i=0; i<N_STAGES; i++) {
     const ag = st.agents[i];
     let frames = AGENT_FRAMES;
     let frame  = 0;
+    let yOff   = 0;
 
-    if      (ag.state==="idle")    { frames=AGENT_FRAMES; frame=0; }
-    else if (ag.state==="waiting") { frames=WAIT_FRAMES;  frame=animFrame; ctx.globalAlpha=0.6+0.4*Math.sin(tick*0.15); }
-    else if (ag.state==="working") { frames=AGENT_FRAMES; frame=animFrame; }
-    else if (ag.state==="done")    { frames=DONE_FRAMES;  frame=0; }
-    else if (ag.state==="error")   { frames=ERROR_FRAMES; frame=animFrame; }
-
-    const yOff = ag.state==="working" ? Math.sin(tick*0.25+i)*2 : 0;
+    if (ag.state==="idle") {
+      frames = AGENT_FRAMES; frame = 0;
+      // Soft breathing: ±1px slow sine, phase-offset per agent so they don't sync
+      yOff = Math.sin(tick * 0.04 + i * 1.3) * 1;
+    }
+    else if (ag.state==="waiting") {
+      frames = WAIT_FRAMES; frame = animFrame;
+      ctx.globalAlpha = 0.6 + 0.4 * Math.sin(tick * 0.15);
+      // no yOff — waiting is still
+    }
+    else if (ag.state==="working") {
+      frames = AGENT_FRAMES; frame = animFrame;
+      // Typing-style dip: always downward push 0→-3px
+      yOff = Math.abs(Math.sin(tick * 0.3 + i)) * -3;
+    }
+    else if (ag.state==="done")  { frames = DONE_FRAMES;  frame = 0; }
+    else if (ag.state==="error") { frames = ERROR_FRAMES; frame = animFrame; }
 
     drawSprite(ctx, frames, frame, ag.x, ag.y+yOff);
     ctx.globalAlpha = 1;
+
+    // ── Thought bubble above agent head ──────────
+    const bubIcon  = BUBBLE_ICONS[ag.state];
+    const bubColor = {
+      idle:"rgba(100,100,180,0.7)", working:"#ffd700",
+      waiting:"#ff8c42", done:"#44ff88", error:"#ff4444"
+    }[ag.state] || "rgba(160,160,220,0.9)";
+    if (bubIcon) {
+      drawThoughtBubble(ctx, ag.x + SPR_W/2, ag.y + yOff, bubIcon, tick + i*17, bubColor);
+    }
 
     // State badge
     const bc = {idle:"#4a4a8a",waiting:"#ff8c42",working:"#ffd700",done:"#44ff88",error:"#ff4444"}[ag.state]||"#4a4a8a";
@@ -895,6 +975,13 @@ function render(ctx, st) {
     ctx.strokeStyle = `rgba(200,136,255,${0.3+0.2*Math.sin(tick*0.1)})`;
     ctx.lineWidth   = 2;
     ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.stroke();
+  }
+
+  // ── Orchestrator thought bubble ───────────────
+  if (st.orchestratorState === "thinking") {
+    drawThoughtBubble(ctx, orcX + SPR_W/2, orcY, "⚙", tick, "#cc88ff");
+  } else if (st.orchestratorState === "delegating") {
+    drawThoughtBubble(ctx, orcX + SPR_W/2, orcY, "→", tick, "#ffd700");
   }
 
   // ── Loop counter (demo) ───────────────────────
