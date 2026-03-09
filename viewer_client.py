@@ -13,7 +13,7 @@ Usage (Python import):
 Usage (CLI — from any shell/agent):
     python3 /path/to/viewer_client.py notify '{"orchestrator":"thinking","current_task":"..."}'
     python3 /path/to/viewer_client.py notify --orchestrator thinking --current_task "..."
-    python3 /path/to/viewer_client.py test     # run smoke-test
+    python3 /path/to/viewer_client.py test     # run dashboard smoke test
 """
 
 import json
@@ -43,7 +43,7 @@ def notify(
     tasks: list | None = None,
 ) -> bool:
     """
-    Push state update to the running viewer.
+    Push a live state update to the running dashboard viewer.
     Returns True on success, False if viewer is unreachable (silent).
 
     orchestrator : "idle" | "thinking" | "reviewing" | "delegating"
@@ -147,7 +147,7 @@ if __name__ == "__main__":
             print(f"  {status}: {step}")
             time.sleep(1.5)
 
-        print("\nDone.")
+        print("\nDashboard smoke test complete.")
 
     # ── CLI dispatch ──────────────────────────
     # Usage:

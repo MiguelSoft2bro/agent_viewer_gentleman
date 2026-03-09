@@ -1,11 +1,11 @@
 # SDD Agent Viewer
 
-Visual dashboard for the [agent-teams-lite](https://github.com/Gentleman-Programming/agent-teams-lite) SDD orchestrator.
+Professional live monitoring dashboard for the [agent-teams-lite](https://github.com/Gentleman-Programming/agent-teams-lite) SDD orchestrator.
 
 > **This project is an extension of agent-teams-lite.**
 > You need to install it first before using this viewer.
 
-Shows the orchestrator and each sub-agent as pixel-art characters animating through the SDD pipeline in real time — just for fun 🎮
+Shows the orchestrator and each sub-agent moving through the SDD pipeline in real time, with a product-style dashboard shell around the existing pixel-art workflow scene.
 
 ---
 
@@ -47,7 +47,7 @@ The installer will:
 viewer
 ```
 
-Opens the dashboard in your browser at `http://localhost:8765`.
+Opens the live dashboard in your browser at `http://localhost:8765`.
 
 ### Start from opencode
 
@@ -59,7 +59,7 @@ Just say: **"arranca el viewer"**
 python3 viewer_client.py test
 ```
 
-Sends all 8 SDD stages (explore → propose → spec → design → tasks → apply → verify → archive) with animated transitions so you can see all the characters in action.
+Sends all 8 SDD stages (explore → propose → spec → design → tasks → apply → verify → archive) with animated transitions so you can validate the live dashboard, task queue, history strip, and activity feed.
 
 ---
 
@@ -85,7 +85,7 @@ opencode (agent-teams-lite SDD orchestrator)
 
 | File | Description |
 |------|-------------|
-| `viewer.py` | Server + pixel-art HTML/JS frontend (single file) |
+| `viewer.py` | Server + embedded professional dashboard frontend (single file) |
 | `viewer_client.py` | State push client — also usable as CLI |
 | `install.sh` | One-command installer |
 

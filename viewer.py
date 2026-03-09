@@ -248,134 +248,560 @@ HTML_PAGE = r"""<!DOCTYPE html>
   <meta charset="UTF-8"/>
   <title>SDD Workflow — Live Agent Viewer</title>
   <style>
+    :root {
+      --bg-0:#07111e;
+      --bg-1:#0c1828;
+      --bg-2:#142338;
+      --panel:#0f1b2d;
+      --panel-strong:#15243a;
+      --panel-soft:rgba(18,31,49,0.82);
+      --line:#213856;
+      --line-strong:#31527f;
+      --text-0:#eef4ff;
+      --text-1:#c7d6ee;
+      --text-2:#7f97ba;
+      --accent:#79c2ff;
+      --accent-soft:rgba(121,194,255,0.16);
+      --success:#57d59a;
+      --warning:#ffb85c;
+      --danger:#ff6b6b;
+      --violet:#b792ff;
+      --shadow:0 24px 70px rgba(0,0,0,0.38);
+      --radius-xl:24px;
+      --radius-lg:18px;
+      --radius-md:12px;
+      --radius-sm:999px;
+      --font-ui:"Avenir Next","Segoe UI Variable","Trebuchet MS",sans-serif;
+      --font-mono:"SFMono-Regular","Consolas","Liberation Mono",monospace;
+    }
     * { margin:0; padding:0; box-sizing:border-box; }
     body {
-      background:#0d0d1a;
-      display:flex; flex-direction:column; align-items:center; justify-content:center;
       min-height:100vh;
-      font-family:'Courier New',monospace; color:#e0e0ff;
+      padding:28px;
+      background:
+        radial-gradient(circle at top left, rgba(121,194,255,0.18), transparent 34%),
+        radial-gradient(circle at top right, rgba(183,146,255,0.14), transparent 26%),
+        linear-gradient(160deg, var(--bg-0), var(--bg-1) 52%, #09121d 100%);
+      font-family:var(--font-ui);
+      color:var(--text-0);
     }
-    #top-bar { display:flex; align-items:center; gap:20px; margin-bottom:10px; }
-    #title { font-size:17px; font-weight:bold; letter-spacing:2px; color:#a0a0ff; text-transform:uppercase; }
-    #mode-badge { font-size:11px; padding:3px 8px; border-radius:4px; font-weight:bold; letter-spacing:1px; }
-    .badge-live { background:#1a3a1a; color:#44ff88; border:1px solid #44ff88; }
-    .badge-demo { background:#3a2a1a; color:#ffd700; border:1px solid #ffd700; }
-    .badge-conn { background:#3a1a1a; color:#ff6666; border:1px solid #ff6666; }
-
-    #main-layout { display:flex; gap:12px; align-items:flex-start; }
-
-    canvas { border:2px solid #2a2a4a; border-radius:8px; background:#1a1a2e; image-rendering:pixelated; }
-
-    /* ── Task panel ─────────────────────────── */
-    #task-panel {
-      width:240px; min-height:460px;
-      background:#12121f; border:1px solid #2a2a4a; border-radius:8px;
-      padding:10px 12px; display:flex; flex-direction:column; gap:6px;
+    body::before {
+      content:"";
+      position:fixed;
+      inset:0;
+      pointer-events:none;
+      background:
+        linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+      background-size:48px 48px;
+      opacity:0.2;
     }
-    #task-panel-title {
-      font-size:11px; font-weight:bold; letter-spacing:1px; color:#5050aa;
-      text-transform:uppercase; margin-bottom:4px; border-bottom:1px solid #2a2a4a; padding-bottom:6px;
+    #app-shell {
+      position:relative;
+      z-index:1;
+      width:min(1420px, 100%);
+      margin:0 auto;
+      display:flex;
+      flex-direction:column;
+      gap:16px;
     }
-    .task-item {
-      display:flex; align-items:flex-start; gap:7px;
-      font-size:11px; padding:5px 6px; border-radius:4px;
-      border:1px solid transparent; transition: border-color 0.3s;
+    .panel {
+      background:var(--panel-soft);
+      border:1px solid var(--line);
+      border-radius:var(--radius-lg);
+      box-shadow:var(--shadow);
+      backdrop-filter:blur(16px);
     }
-    .task-item.pending  { color:#4a4a7a; border-color:#1e1e3a; }
-    .task-item.in_progress { color:#ffd700; border-color:#5a4a00; background:#1a1600; }
-    .task-item.completed   { color:#44ff88; border-color:#1a3a22; }
-    .task-item.cancelled   { color:#555566; border-color:#1a1a2a; text-decoration:line-through; }
-    .task-dot {
-      width:8px; height:8px; border-radius:50%; flex-shrink:0; margin-top:2px;
+    #top-bar {
+      display:grid;
+      grid-template-columns:minmax(0, 1.4fr) minmax(320px, 1fr);
+      gap:16px;
+      padding:22px 24px;
     }
-    .dot-pending    { background:#2a2a5a; }
-    .dot-in_progress{ background:#ffd700; box-shadow:0 0 4px #ffd700; }
-    .dot-completed  { background:#44ff88; }
-    .dot-cancelled  { background:#333344; }
-    .task-agent-badge {
-      font-size:9px; padding:1px 4px; border-radius:2px;
-      background:#1a2a3a; color:#5588ff; border:1px solid #2a3a5a;
+    #hero-copy {
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+    #eyebrow {
+      font-size:11px;
+      text-transform:uppercase;
+      letter-spacing:0.22em;
+      color:var(--accent);
+      font-weight:700;
+    }
+    #title-row {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:16px;
+      flex-wrap:wrap;
+    }
+    #title {
+      font-size:28px;
+      line-height:1.05;
+      font-weight:700;
+      letter-spacing:0.01em;
+      color:var(--text-0);
+    }
+    #mode-badge {
+      font-size:11px;
+      padding:7px 12px;
+      border-radius:var(--radius-sm);
+      font-weight:700;
+      letter-spacing:0.14em;
+      text-transform:uppercase;
+      border:1px solid transparent;
       white-space:nowrap;
     }
-
-    #task-bar {
-      margin-top:8px; width:100%;
-      background:#12121f; border:1px solid #2a2a4a; border-radius:6px;
-      padding:7px 14px; font-size:12px; color:#8888cc;
-      min-height:30px; display:flex; align-items:center; gap:10px;
+    .badge-live { background:rgba(87,213,154,0.14); color:var(--success); border-color:rgba(87,213,154,0.4); }
+    .badge-demo { background:rgba(255,184,92,0.14); color:var(--warning); border-color:rgba(255,184,92,0.4); }
+    .badge-conn { background:rgba(255,107,107,0.14); color:var(--danger); border-color:rgba(255,107,107,0.4); }
+    #subtitle {
+      max-width:760px;
+      font-size:14px;
+      line-height:1.5;
+      color:var(--text-1);
     }
-    #task-label { color:#5050aa; }
-    #task-text  { color:#ccccff; flex:1; }
-
-    #bottom-bar { display:flex; gap:20px; align-items:center; margin-top:8px; }
-    #legend { display:flex; gap:18px; font-size:11px; }
-    .legend-item { display:flex; align-items:center; gap:5px; }
-    .dot { width:10px; height:10px; border-radius:50%; display:inline-block; }
-
-    #history-bar { display:flex; gap:5px; flex-wrap:wrap; }
-    .hist-chip {
-      font-size:10px; padding:2px 6px; border-radius:3px;
-      background:#1a2a1a; color:#44ff88; border:1px solid #2a4a2a;
+    #status-grid {
+      display:grid;
+      grid-template-columns:repeat(3, minmax(0, 1fr));
+      gap:12px;
+      align-content:start;
     }
-
-    /* ── Event Log ───────────────────────────── */
+    .status-card {
+      padding:14px 16px;
+      border-radius:var(--radius-md);
+      background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+      border:1px solid rgba(255,255,255,0.05);
+      min-height:92px;
+    }
+    .status-label {
+      font-size:10px;
+      text-transform:uppercase;
+      letter-spacing:0.18em;
+      color:var(--text-2);
+      margin-bottom:10px;
+      display:block;
+    }
+    .status-value {
+      font-family:var(--font-mono);
+      font-size:15px;
+      line-height:1.35;
+      color:var(--text-0);
+      word-break:break-word;
+    }
+    .status-value.muted { color:var(--text-1); }
+    #main-layout {
+      display:grid;
+      grid-template-columns:minmax(0, 1.6fr) minmax(300px, 0.72fr);
+      gap:16px;
+      align-items:start;
+    }
+    #scene-panel {
+      padding:18px;
+      display:flex;
+      flex-direction:column;
+      gap:14px;
+    }
+    .section-head {
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+    }
+    .section-kicker {
+      font-size:10px;
+      text-transform:uppercase;
+      letter-spacing:0.18em;
+      color:var(--text-2);
+      margin-bottom:6px;
+      display:block;
+    }
+    .section-title {
+      font-size:20px;
+      font-weight:650;
+      color:var(--text-0);
+    }
+    .section-note {
+      font-size:12px;
+      color:var(--text-2);
+      max-width:440px;
+      line-height:1.45;
+    }
+    #status-inline {
+      display:flex;
+      align-items:center;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+    .inline-pill {
+      padding:6px 10px;
+      border-radius:var(--radius-sm);
+      border:1px solid var(--line-strong);
+      background:var(--accent-soft);
+      color:var(--accent);
+      font-size:11px;
+      font-weight:700;
+      letter-spacing:0.08em;
+      text-transform:uppercase;
+      font-family:var(--font-mono);
+    }
+    #canvas-wrap {
+      position:relative;
+      border-radius:20px;
+      padding:14px;
+      background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(6,12,20,0.55));
+      border:1px solid rgba(255,255,255,0.05);
+      overflow:hidden;
+    }
+    #canvas-wrap::before {
+      content:"";
+      position:absolute;
+      inset:0;
+      background:linear-gradient(180deg, rgba(121,194,255,0.08), transparent 32%);
+      pointer-events:none;
+    }
+    canvas {
+      position:relative;
+      width:100%;
+      height:auto;
+      display:block;
+      border:1px solid rgba(121,194,255,0.12);
+      border-radius:16px;
+      background:#0b1626;
+      image-rendering:pixelated;
+    }
+    #task-panel {
+      padding:18px;
+      min-height:100%;
+      display:flex;
+      flex-direction:column;
+      gap:14px;
+    }
+    #task-panel-title {
+      font-size:12px;
+      text-transform:uppercase;
+      letter-spacing:0.16em;
+      color:var(--text-2);
+      font-weight:700;
+    }
+    #task-summary {
+      display:flex;
+      align-items:center;
+      gap:8px;
+      flex-wrap:wrap;
+      color:var(--text-1);
+      font-size:12px;
+    }
+    .task-stat {
+      padding:5px 9px;
+      border-radius:var(--radius-sm);
+      border:1px solid rgba(255,255,255,0.06);
+      background:rgba(255,255,255,0.03);
+      font-family:var(--font-mono);
+      color:var(--text-1);
+    }
+    #task-list {
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+    .task-empty {
+      padding:18px;
+      border:1px dashed rgba(255,255,255,0.1);
+      border-radius:var(--radius-md);
+      color:var(--text-2);
+      font-size:13px;
+      line-height:1.45;
+    }
+    .task-item {
+      display:flex;
+      align-items:flex-start;
+      gap:12px;
+      padding:14px;
+      border-radius:var(--radius-md);
+      border:1px solid rgba(255,255,255,0.06);
+      background:rgba(255,255,255,0.025);
+      transition:border-color 0.25s ease, transform 0.25s ease, background 0.25s ease;
+    }
+    .task-item.pending { color:var(--text-1); }
+    .task-item.in_progress {
+      background:linear-gradient(180deg, rgba(255,184,92,0.1), rgba(255,184,92,0.03));
+      border-color:rgba(255,184,92,0.34);
+      transform:translateY(-1px);
+    }
+    .task-item.completed {
+      background:linear-gradient(180deg, rgba(87,213,154,0.08), rgba(87,213,154,0.025));
+      border-color:rgba(87,213,154,0.28);
+    }
+    .task-item.cancelled {
+      color:var(--text-2);
+      border-color:rgba(255,107,107,0.16);
+      opacity:0.76;
+    }
+    .task-dot {
+      width:10px;
+      height:10px;
+      border-radius:50%;
+      flex-shrink:0;
+      margin-top:6px;
+      box-shadow:0 0 0 6px transparent;
+    }
+    .dot-pending { background:#5f7aa0; }
+    .dot-in_progress { background:var(--warning); box-shadow:0 0 0 6px rgba(255,184,92,0.12); }
+    .dot-completed { background:var(--success); box-shadow:0 0 0 6px rgba(87,213,154,0.12); }
+    .dot-cancelled { background:#7f97ba; }
+    .task-copy { flex:1; min-width:0; display:flex; flex-direction:column; gap:8px; }
+    .task-topline {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+    .task-title {
+      font-size:13px;
+      line-height:1.45;
+      color:var(--text-0);
+      word-break:break-word;
+    }
+    .task-item.cancelled .task-title { text-decoration:line-through; }
+    .task-meta {
+      display:flex;
+      align-items:center;
+      gap:8px;
+      flex-wrap:wrap;
+      font-size:11px;
+      color:var(--text-2);
+      text-transform:uppercase;
+      letter-spacing:0.08em;
+    }
+    .task-agent-badge,
+    .task-status-badge {
+      padding:4px 8px;
+      border-radius:var(--radius-sm);
+      border:1px solid rgba(255,255,255,0.08);
+      font-size:10px;
+      line-height:1;
+      font-family:var(--font-mono);
+      white-space:nowrap;
+    }
+    .task-agent-badge { color:var(--accent); background:rgba(121,194,255,0.1); }
+    .task-status-badge.pending { color:var(--text-1); }
+    .task-status-badge.in_progress { color:var(--warning); border-color:rgba(255,184,92,0.28); background:rgba(255,184,92,0.12); }
+    .task-status-badge.completed { color:var(--success); border-color:rgba(87,213,154,0.28); background:rgba(87,213,154,0.1); }
+    .task-status-badge.cancelled { color:var(--danger); border-color:rgba(255,107,107,0.25); background:rgba(255,107,107,0.1); }
+    #task-bar,
+    #bottom-bar,
     #log-panel {
-      width:1346px; max-width:98vw;
-      margin-top:8px;
-      background:#0e0e1c; border:1px solid #2a2a4a; border-radius:6px;
-      padding:6px 12px;
-      max-height:130px; overflow-y:auto;
-      display:flex; flex-direction:column; gap:2px;
+      padding:18px 20px;
     }
+    #task-bar {
+      display:grid;
+      grid-template-columns:auto minmax(0, 1fr);
+      align-items:start;
+      gap:14px;
+    }
+    #task-label,
+    #history-label,
     #log-panel-title {
-      font-size:10px; color:#3a3a6a; text-transform:uppercase;
-      letter-spacing:1.5px; margin-bottom:4px;
-      border-bottom:1px solid #1a1a32; padding-bottom:4px; flex-shrink:0;
+      font-size:11px;
+      text-transform:uppercase;
+      letter-spacing:0.18em;
+      color:var(--text-2);
+      font-weight:700;
     }
-    .log-entry { font-size:10px; display:flex; gap:8px; flex-shrink:0; }
-    .log-ts    { color:#3a3a6a; flex-shrink:0; font-size:9px; }
-    .log-stage { color:#5577cc; flex-shrink:0; min-width:90px; }
-    .log-msg   { color:#aaaacc; flex:1; }
-    .log-s-working   { color:#ffd700; }
-    .log-s-done      { color:#44ff88; }
-    .log-s-error     { color:#ff4444; }
-    .log-s-thinking  { color:#cc88ff; }
-    .log-s-delegating{ color:#88ccff; }
-    .log-s-waiting   { color:#ff8c42; }
+    #task-text {
+      color:var(--text-0);
+      font-size:15px;
+      line-height:1.55;
+      min-height:24px;
+    }
+    #bottom-bar {
+      display:grid;
+      grid-template-columns:auto minmax(0, 1fr);
+      gap:16px;
+      align-items:start;
+    }
+    #legend { display:flex; gap:12px; flex-wrap:wrap; font-size:11px; color:var(--text-1); }
+    .legend-item {
+      display:flex;
+      align-items:center;
+      gap:6px;
+      padding:5px 10px;
+      border-radius:var(--radius-sm);
+      background:rgba(255,255,255,0.03);
+      border:1px solid rgba(255,255,255,0.05);
+    }
+    .dot { width:10px; height:10px; border-radius:50%; display:inline-block; }
+    #history-meta {
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      min-width:0;
+    }
+    #history-bar { display:flex; gap:8px; flex-wrap:wrap; }
+    .hist-chip {
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding:7px 10px;
+      border-radius:var(--radius-sm);
+      background:rgba(255,255,255,0.03);
+      border:1px solid rgba(255,255,255,0.08);
+      font-size:11px;
+      color:var(--text-1);
+      font-family:var(--font-mono);
+      text-transform:uppercase;
+      letter-spacing:0.08em;
+    }
+    .hist-chip::before {
+      content:"";
+      width:7px;
+      height:7px;
+      border-radius:50%;
+      background:currentColor;
+      opacity:0.92;
+    }
+    #log-panel {
+      max-height:220px;
+      overflow-y:auto;
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+    }
+    .log-entry {
+      display:grid;
+      grid-template-columns:76px 96px minmax(0, 1fr);
+      gap:10px;
+      font-size:12px;
+      padding:9px 0;
+      border-top:1px solid rgba(255,255,255,0.045);
+      flex-shrink:0;
+    }
+    .log-entry:first-of-type { border-top:none; }
+    .log-ts { color:var(--text-2); font-size:11px; font-family:var(--font-mono); }
+    .log-stage {
+      color:var(--accent);
+      font-size:11px;
+      text-transform:uppercase;
+      letter-spacing:0.12em;
+      font-family:var(--font-mono);
+    }
+    .log-msg { color:var(--text-1); line-height:1.45; }
+    .log-s-working { color:var(--warning); }
+    .log-s-done { color:var(--success); }
+    .log-s-error { color:var(--danger); }
+    .log-s-thinking { color:var(--violet); }
+    .log-s-delegating { color:var(--accent); }
+    .log-s-waiting { color:#ffcf94; }
+    @media (max-width: 1180px) {
+      #top-bar,
+      #main-layout {
+        grid-template-columns:1fr;
+      }
+      #task-panel {
+        min-height:0;
+      }
+    }
+    @media (max-width: 860px) {
+      body { padding:18px; }
+      #top-bar,
+      #scene-panel,
+      #task-panel,
+      #task-bar,
+      #bottom-bar,
+      #log-panel { padding:16px; }
+      #status-grid {
+        grid-template-columns:1fr;
+      }
+      #task-bar,
+      #bottom-bar,
+      .log-entry {
+        grid-template-columns:1fr;
+      }
+      #title { font-size:23px; }
+      .section-title { font-size:18px; }
+    }
   </style>
 </head>
 <body>
-  <div id="top-bar">
-    <div id="title">⬡ SDD Workflow — Live Agent Viewer</div>
-    <div id="mode-badge" class="badge-conn">CONNECTING...</div>
-  </div>
-
-  <div id="main-layout">
-    <canvas id="canvas" width="1090" height="460"></canvas>
-    <div id="task-panel">
-      <div id="task-panel-title">📋 Tasks</div>
-      <div id="task-list"><span style="color:#2a2a5a;font-size:11px">no tasks yet...</span></div>
+  <div id="app-shell">
+    <div id="top-bar" class="panel">
+      <div id="hero-copy">
+        <span id="eyebrow">Operational View</span>
+        <div id="title-row">
+          <div id="title">SDD Workflow Control Surface</div>
+          <div id="mode-badge" class="badge-conn">CONNECTING...</div>
+        </div>
+        <div id="subtitle">Track orchestrator decisions, active stage ownership, task flow, and event telemetry in one live single-file dashboard.</div>
+      </div>
+      <div id="status-grid">
+        <div class="status-card">
+          <span class="status-label">Orchestrator</span>
+          <div id="status-orchestrator" class="status-value">Idle</div>
+        </div>
+        <div class="status-card">
+          <span class="status-label">Active Stage</span>
+          <div id="status-stage" class="status-value muted">No active stage</div>
+        </div>
+        <div class="status-card">
+          <span class="status-label">Current Task</span>
+          <div id="status-task" class="status-value muted">Waiting for orchestrator...</div>
+        </div>
+      </div>
     </div>
-  </div>
 
-  <div id="task-bar">
+    <div id="main-layout">
+      <div id="scene-panel" class="panel">
+        <div class="section-head">
+          <div>
+            <span class="section-kicker">Live Pipeline</span>
+            <div class="section-title">Animated Stage Activity</div>
+          </div>
+          <div id="status-inline">
+            <span id="scene-connection" class="inline-pill">CONNECTING</span>
+            <span id="scene-caption" class="section-note">Live SSE pipeline standby.</span>
+          </div>
+        </div>
+        <div id="canvas-wrap">
+          <canvas id="canvas" width="1090" height="460"></canvas>
+        </div>
+      </div>
+      <div id="task-panel" class="panel">
+        <div id="task-panel-title">Task Queue</div>
+        <div id="task-summary">
+          <span class="task-stat" id="task-count">0 tasks</span>
+          <span class="task-stat" id="task-progress">0 active</span>
+        </div>
+        <div id="task-list"><div class="task-empty">No tasks yet. Live `/state` updates will populate the queue here.</div></div>
+      </div>
+    </div>
+
+    <div id="task-bar" class="panel">
     <span id="task-label">task:</span>
     <span id="task-text">waiting for orchestrator...</span>
-  </div>
-
-  <div id="bottom-bar">
-    <div id="legend">
-      <div class="legend-item"><span class="dot" style="background:#4a4a8a"></span>idle</div>
-      <div class="legend-item"><span class="dot" style="background:#ffd700"></span>working</div>
-      <div class="legend-item"><span class="dot" style="background:#ff8c42"></span>waiting</div>
-      <div class="legend-item"><span class="dot" style="background:#44ff88"></span>done</div>
-      <div class="legend-item"><span class="dot" style="background:#ff4444"></span>error</div>
     </div>
-    <div id="history-bar"></div>
-  </div>
 
-  <div id="log-panel">
-    <div id="log-panel-title">&#9654; Event Log</div>
+    <div id="bottom-bar" class="panel">
+      <div id="legend">
+        <div class="legend-item"><span class="dot" style="background:#5f7aa0"></span>idle</div>
+        <div class="legend-item"><span class="dot" style="background:#ffb85c"></span>working</div>
+        <div class="legend-item"><span class="dot" style="background:#ffcf94"></span>waiting</div>
+        <div class="legend-item"><span class="dot" style="background:#57d59a"></span>done</div>
+        <div class="legend-item"><span class="dot" style="background:#ff6b6b"></span>error</div>
+      </div>
+      <div id="history-meta">
+        <span id="history-label">Stage History</span>
+        <div id="history-bar"></div>
+      </div>
+    </div>
+
+    <div id="log-panel" class="panel">
+      <div id="log-panel-title">Activity Feed</div>
+    </div>
   </div>
 
 <script>
@@ -400,8 +826,18 @@ const STAGE_LABELS = ["explore","propose","spec","design","tasks","apply","verif
 const N_STAGES     = STAGE_LABELS.length;
 
 const STAGE_COLORS = [
-  "#1a2a1a","#2a1a2a","#2a2a1a","#1a2a2a",
-  "#2a1a1a","#1a1a2a","#1a2a20","#2a1a0a",
+  "rgba(75,130,116,0.18)","rgba(111,91,164,0.18)","rgba(160,121,76,0.18)","rgba(60,140,154,0.18)",
+  "rgba(176,117,78,0.18)","rgba(101,145,98,0.18)","rgba(171,90,113,0.18)","rgba(171,136,72,0.18)",
+];
+const STAGE_META = [
+  "Discover scope",
+  "Shape direction",
+  "Lock requirements",
+  "Define approach",
+  "Sequence work",
+  "Ship changes",
+  "Validate behavior",
+  "Close out",
 ];
 
 // ─────────────────────────────────────────────
@@ -508,6 +944,54 @@ function drawPaper(ctx, x, y, label, glowing) {
 
 function truncate(s, n) {
   return s && s.length > n ? s.slice(0, n-1)+"…" : (s||"");
+}
+
+function titleCase(value) {
+  return String(value || "idle")
+    .replace(/_/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function updateStatusSummary(sv, isDemo, connectionState) {
+  const orchestrator = document.getElementById("status-orchestrator");
+  const stage = document.getElementById("status-stage");
+  const task = document.getElementById("status-task");
+  const connection = document.getElementById("scene-connection");
+  const caption = document.getElementById("scene-caption");
+  const activeStage = sv.current_agent ? titleCase(sv.current_agent) : "No active stage";
+  const agentState = sv.current_agent ? ` (${titleCase(sv.agent_state || "idle")})` : "";
+
+  orchestrator.textContent = titleCase(sv.orchestrator || (isDemo ? "demo" : "idle"));
+  stage.textContent = activeStage + agentState;
+  task.textContent = sv.current_task || (isDemo ? "Running demo sequence..." : "Waiting for orchestrator...");
+  connection.textContent = connectionState.toUpperCase();
+
+  if (connectionState === "live") {
+    connection.style.color = "var(--success)";
+    connection.style.borderColor = "rgba(87,213,154,0.34)";
+    connection.style.background = "rgba(87,213,154,0.12)";
+    caption.textContent = sv.current_agent
+      ? `${titleCase(sv.current_agent)} is ${titleCase(sv.agent_state || "idle").toLowerCase()} on the live pipeline.`
+      : "Awaiting the next live orchestration update.";
+  } else if (connectionState === "demo") {
+    connection.style.color = "var(--warning)";
+    connection.style.borderColor = "rgba(255,184,92,0.34)";
+    connection.style.background = "rgba(255,184,92,0.12)";
+    caption.textContent = "Demo mode is simulating the full SDD workflow loop.";
+  } else if (connectionState === "disconnected") {
+    connection.style.color = "var(--danger)";
+    connection.style.borderColor = "rgba(255,107,107,0.34)";
+    connection.style.background = "rgba(255,107,107,0.12)";
+    caption.textContent = "Connection lost. Retrying the SSE stream automatically.";
+  } else {
+    connection.style.color = "var(--accent)";
+    connection.style.borderColor = "var(--line-strong)";
+    connection.style.background = "var(--accent-soft)";
+    caption.textContent = "Establishing the live SSE stream...";
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -970,8 +1454,28 @@ function render(ctx, st) {
   const animFrame = Math.floor(tick / ANIM_PERIOD) % 2;
 
   // Background
-  ctx.fillStyle = "#1a1a2e";
+  const bg = ctx.createLinearGradient(0, 0, 0, CANVAS_H);
+  bg.addColorStop(0, "#0c1828");
+  bg.addColorStop(0.58, "#0a1422");
+  bg.addColorStop(1, "#08111d");
+  ctx.fillStyle = bg;
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  ctx.fillStyle = "rgba(121,194,255,0.05)";
+  ctx.fillRect(0, 0, CANVAS_W, 72);
+  ctx.strokeStyle = "rgba(121,194,255,0.16)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, 72);
+  ctx.lineTo(CANVAS_W, 72);
+  ctx.stroke();
+
+  ctx.fillStyle = "#dfeaff";
+  ctx.font = "600 18px 'Avenir Next','Trebuchet MS',sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText("Pipeline activity", 24, 30);
+  ctx.fillStyle = "#7f97ba";
+  ctx.font = "12px 'SFMono-Regular','Consolas',monospace";
+  ctx.fillText("Live canvas scene fed by the current /state and SSE contract.", 24, 51);
 
   // ── Stage zones ──────────────────────────────
   for (let i=0; i<N_STAGES; i++) {
@@ -984,24 +1488,34 @@ function render(ctx, st) {
     ctx.fillStyle = STAGE_COLORS[i];
     ctx.beginPath(); ctx.roundRect(zx, zy, zw, ZONE_H, 7); ctx.fill();
 
-    ctx.strokeStyle = isActive ? "#ffd700"
-                    : ag.state==="done"  ? "#44ff88"
-                    : ag.state==="error" ? "#ff4444"
-                    : "#2a2a5a";
-    ctx.lineWidth = isActive ? 2 : 1;
+    ctx.strokeStyle = isActive ? "#ffb85c"
+                    : ag.state==="done"  ? "#57d59a"
+                    : ag.state==="error" ? "#ff6b6b"
+                    : "rgba(121,194,255,0.16)";
+    ctx.lineWidth = isActive ? 2.5 : 1;
     ctx.beginPath(); ctx.roundRect(zx, zy, zw, ZONE_H, 7); ctx.stroke();
 
-    // Zone label
-    ctx.fillStyle = ag.state==="done" ? "#44ff88"
-                  : ag.state==="error" ? "#ff4444"
-                  : isActive ? "#ffd700" : "#5050aa";
-    ctx.font = "bold 10px 'Courier New',monospace";
-    ctx.textAlign = "center";
-    ctx.fillText(STAGE_LABELS[i].toUpperCase(), zx+zw/2, zy+ZONE_H-10);
+    if (isActive) {
+      ctx.strokeStyle = "rgba(255,184,92,0.2)";
+      ctx.lineWidth = 7;
+      ctx.beginPath(); ctx.roundRect(zx + 4, zy + 4, zw - 8, ZONE_H - 8, 9); ctx.stroke();
+    }
 
-    ctx.fillStyle = "#30306a";
-    ctx.font = "9px 'Courier New',monospace";
-    ctx.fillText(`[${i+1}]`, zx+zw/2, zy+ZONE_H-22);
+    // Zone label
+    ctx.fillStyle = ag.state==="done" ? "#57d59a"
+                  : ag.state==="error" ? "#ff6b6b"
+                  : isActive ? "#ffcf94" : "#8fb2dd";
+    ctx.font = "bold 10px 'SFMono-Regular','Consolas',monospace";
+    ctx.textAlign = "center";
+    ctx.fillText(STAGE_LABELS[i].toUpperCase(), zx+zw/2, zy+ZONE_H-18);
+
+    ctx.fillStyle = "#6f86a9";
+    ctx.font = "11px 'Avenir Next','Trebuchet MS',sans-serif";
+    ctx.fillText(STAGE_META[i], zx+zw/2, zy+ZONE_H-6);
+
+    ctx.fillStyle = "#587497";
+    ctx.font = "9px 'SFMono-Regular','Consolas',monospace";
+    ctx.fillText(`[${i+1}]`, zx+zw/2, zy+18);
   }
 
   // ── Connector line ────────────────────────────
@@ -1010,7 +1524,7 @@ function render(ctx, st) {
     const i  = st.currentStage >= 0 ? st.currentStage : 0;
     const tx = stageX(i) + SPR_W/2;
     const ty = STAGE_Y + SPR_H/2;
-    ctx.strokeStyle = "rgba(255,215,0,0.12)";
+    ctx.strokeStyle = "rgba(121,194,255,0.16)";
     ctx.lineWidth = 1;
     ctx.setLineDash([4,4]);
     ctx.beginPath();
@@ -1024,8 +1538,8 @@ function render(ctx, st) {
   for (let i=0; i<N_STAGES-1; i++) {
     const ax = MARGIN + (i+1)*STAGE_SPAN - 4;
     const ay = STAGE_Y + SPR_H/2 + 4;
-    ctx.fillStyle = st.agents[i].state==="done" ? "#33aa55" : "#2a2a5a";
-    ctx.font = "13px 'Courier New',monospace";
+    ctx.fillStyle = st.agents[i].state==="done" ? "#57d59a" : "rgba(121,194,255,0.3)";
+    ctx.font = "13px 'SFMono-Regular','Consolas',monospace";
     ctx.textAlign = "center";
     ctx.fillText("→", ax, ay);
   }
@@ -1076,9 +1590,9 @@ function render(ctx, st) {
     }
 
     // State badge
-    const bc = {idle:"#4a4a8a",waiting:"#ff8c42",working:"#ffd700",done:"#44ff88",error:"#ff4444"}[ag.state]||"#4a4a8a";
+    const bc = {idle:"#7f97ba",waiting:"#ffcf94",working:"#ffb85c",done:"#57d59a",error:"#ff6b6b"}[ag.state]||"#7f97ba";
     ctx.fillStyle = bc;
-    ctx.font = "8px 'Courier New',monospace";
+    ctx.font = "8px 'SFMono-Regular','Consolas',monospace";
     ctx.textAlign = "center";
     ctx.fillText(ag.state, ag.x+SPR_W/2, ag.y-5);
 
@@ -1089,8 +1603,8 @@ function render(ctx, st) {
       drawPaper(ctx, px, py, ag.taskLabel, ag.state==="working");
     } else if (ag.state==="working" && ag.taskLabel) {
       // Show task name below agent even without paper prop
-      ctx.fillStyle   = "#aaaadd";
-      ctx.font        = "8px 'Courier New',monospace";
+      ctx.fillStyle   = "#c7d6ee";
+      ctx.font        = "8px 'SFMono-Regular','Consolas',monospace";
       ctx.textAlign   = "center";
       ctx.fillText(truncate(ag.taskLabel, 14), ag.x+SPR_W/2, ag.y+SPR_H+12);
     }
@@ -1115,12 +1629,12 @@ function render(ctx, st) {
   const orcColor = st.orchestratorState==="thinking"   ? "#cc88ff"
                  : st.orchestratorState==="reviewing"  ? "#88ffcc"
                  : st.orchestratorState==="delegating" ? "#ffd700"
-                 : "#888899";
+                 : "#8fb2dd";
   ctx.fillStyle = orcColor;
-  ctx.font = "bold 9px 'Courier New',monospace";
+  ctx.font = "bold 9px 'SFMono-Regular','Consolas',monospace";
   ctx.textAlign = "center";
   ctx.fillText("ORCHESTRATOR", orcX+SPR_W/2, orcY-13);
-  ctx.font = "8px 'Courier New',monospace";
+  ctx.font = "8px 'SFMono-Regular','Consolas',monospace";
   ctx.fillText(st.orchestratorState, orcX+SPR_W/2, orcY-4);
 
   // Hub dot
@@ -1160,8 +1674,8 @@ function render(ctx, st) {
 
   // ── Loop counter (demo) ───────────────────────
   if (st.loop > 0) {
-    ctx.fillStyle  = "#30306a";
-    ctx.font       = "10px 'Courier New',monospace";
+   ctx.fillStyle  = "#7f97ba";
+   ctx.font       = "10px 'SFMono-Regular','Consolas',monospace";
     ctx.textAlign  = "right";
     ctx.fillText(`loop #${st.loop+1}`, CANVAS_W-10, 18);
   }
@@ -1172,8 +1686,14 @@ function render(ctx, st) {
 // ─────────────────────────────────────────────
 function renderTaskPanel(tasks) {
   const list = document.getElementById("task-list");
+  const count = document.getElementById("task-count");
+  const progress = document.getElementById("task-progress");
+  const active = (tasks || []).filter(t => t.status === "in_progress").length;
+  const completed = (tasks || []).filter(t => t.status === "completed").length;
+  if (count) count.textContent = `${(tasks || []).length} task${(tasks || []).length === 1 ? "" : "s"}`;
+  if (progress) progress.textContent = `${active} active / ${completed} done`;
   if (!tasks || tasks.length === 0) {
-    list.innerHTML = '<span style="color:#2a2a5a;font-size:11px">no tasks yet...</span>';
+    list.innerHTML = '<div class="task-empty">No tasks yet. Live `/state` updates will populate the queue here.</div>';
     return;
   }
   list.innerHTML = tasks.map(t => {
@@ -1186,11 +1706,20 @@ function renderTaskPanel(tasks) {
                : t.status==="in_progress" ? "▶ "
                : t.status==="cancelled"   ? "✕ "
                : "○ ";
+    const statusLabel = t.status === "in_progress"
+      ? "in progress"
+      : t.status;
     return `<div class="task-item ${itemClass}">
       <div class="task-dot ${dotClass}"></div>
-      <div style="flex:1">
-        <div>${icon}${t.title || t.id}</div>
-        ${agentBadge}
+      <div class="task-copy">
+        <div class="task-topline">
+          <div class="task-title">${icon}${t.title || t.id}</div>
+          <span class="task-status-badge ${itemClass}">${statusLabel}</span>
+        </div>
+        <div class="task-meta">
+          ${agentBadge}
+          <span>${t.id || "task"}</span>
+        </div>
       </div>
     </div>`;
   }).join("");
@@ -1202,8 +1731,9 @@ function renderTaskPanel(tasks) {
 function updateHistoryBar(history) {
   const bar = document.getElementById("history-bar");
   bar.innerHTML = history.map(h => {
-    const color = h.status==="done" ? "#44ff88" : h.status==="error" ? "#ff4444" : "#ffd700";
-    return `<span class="hist-chip" style="border-color:${color};color:${color}">${h.stage} ✓</span>`;
+    const color = h.status==="done" ? "#57d59a" : h.status==="error" ? "#ff6b6b" : "#ffb85c";
+    const label = h.status === "error" ? "error" : "done";
+    return `<span class="hist-chip" style="border-color:${color};color:${color}">${h.stage} · ${label}</span>`;
   }).join("");
 }
 
@@ -1286,6 +1816,7 @@ window.onload = function () {
   const badge    = document.getElementById("mode-badge");
   const isDemo   = new URLSearchParams(window.location.search).has("demo");
   const state    = createState();
+  updateStatusSummary({ orchestrator: isDemo ? "demo" : "idle", current_task: "", current_agent: null, agent_state: "idle" }, isDemo, isDemo ? "demo" : "connecting");
 
   if (isDemo) {
     badge.textContent = "DEMO"; badge.className = "badge-demo";
@@ -1293,6 +1824,12 @@ window.onload = function () {
       updateDemo(state);
       render(ctx, state);
       taskText.textContent = state.statusText;
+      updateStatusSummary({
+        orchestrator: "demo",
+        current_task: state.statusText,
+        current_agent: state.currentStage >= 0 ? STAGE_LABELS[state.currentStage] : null,
+        agent_state: state.currentStage >= 0 ? state.agents[state.currentStage].state : "idle",
+      }, true, "demo");
       requestAnimationFrame(demoLoop);
     }
     demoLoop();
@@ -1302,7 +1839,10 @@ window.onload = function () {
 
     function connectSSE() {
       const es = new EventSource(`http://localhost:${PORT}/events`);
-      es.onopen = () => { badge.textContent="LIVE"; badge.className="badge-live"; };
+      es.onopen = () => {
+        badge.textContent="LIVE"; badge.className="badge-live";
+        updateStatusSummary({ orchestrator: state.orchestratorState, current_task: state.statusText, current_agent: null, agent_state: "idle" }, false, "live");
+      };
       es.onmessage = (e) => {
         try {
           const sv = JSON.parse(e.data);
@@ -1310,10 +1850,12 @@ window.onload = function () {
           taskText.textContent = sv.current_task || "Orchestrator idle";
           if (sv.tasks && sv.tasks.length>0) renderTaskPanel(sv.tasks);
           diffAndLog(sv);
+          updateStatusSummary(sv, false, "live");
         } catch(err) { console.warn("SSE parse error", err); }
       };
       es.onerror = () => {
         badge.textContent="DISCONNECTED"; badge.className="badge-conn";
+        updateStatusSummary({ orchestrator: state.orchestratorState, current_task: state.statusText, current_agent: null, agent_state: "idle" }, false, "disconnected");
         es.close(); setTimeout(connectSSE, 2000);
       };
     }
